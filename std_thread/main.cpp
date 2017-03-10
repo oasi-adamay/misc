@@ -21,11 +21,17 @@ int main(void) {
 
 	int num_thread = 4;
 	for (int i = 0; i < num_thread; i++) {
+		int num = 10 / num_thread;
+		int s = num * i;
+		if (i - 1 == 10 / num_thread) num += 10 % num_thread;
+
 		threads.push_back(
-			std::thread([&theMtx](int i) {
+			std::thread([&theMtx](int s,int num) {
 				std::lock_guard<std::mutex> lock(theMtx);
-				std::cout << i << std::endl;
-			}, i)
+				for (int i = s; i < s + num; i++) {
+					std::cout << i << std::endl;
+				}
+			}, s, num)
 		);
 	}
 
