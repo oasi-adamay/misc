@@ -8,6 +8,19 @@ typedef unsigned long  UINT32;
 typedef signed long  SINT32;
 
 
+int ULPs(float a, float b) {
+	int aInt = *(int*)&a;
+	// Make aInt lexicographically ordered as a twos-complement int
+	if (aInt < 0)
+		aInt = 0x80000000 - aInt;
+	// Make bInt lexicographically ordered as a twos-complement int
+	int bInt = *(int*)&b;
+	if (bInt < 0)
+		bInt = 0x80000000 - bInt;
+	return abs(aInt - bInt);
+}
+
+
 UINT32 udiv32(
 	const UINT32 z,             //!<[I ]:dividend
 	const UINT32 d)             //!<[I ]:divsor
@@ -41,10 +54,10 @@ UINT32 udiv24(
 		n--;
 		if ((r >> n) >= d) {
 			r -= (d << n);
-			q += (1 << n);
+			q += (1LL << n);
 		}
 	} while (n);
-	return q;
+	return (UINT32)q;
 }
 
 
@@ -73,6 +86,35 @@ float fdiv(
 
 	return q;
 
+}
+
+
+float fexp(
+	const float x             //!<[I ]:dividend
+)
+{
+	// log2f(1.0f);
+//	const float LOG2 = log2f(1.0f);
+	const float LOG2 = 0.30102999566f;
+	float a = LOG2*x;
+	a -= (a < 0);
+	int n = (int)a;
+	float b = x - (float)n * LOG2;
+	float y;
+	//horner scheme 5 th order 
+	y = 1.185268231308989403584147407056378360798378534739e-2f;
+	y *= b;
+	y += 3.87412011356070379615759057344100690905653320886699e-2f;
+	y *= b;
+	y += 0.16775408658617866431779970932853611481292418818223f;
+	y *= b;
+	y += 0.49981934577169208735732248650232562589934399402426f;
+	y *= b;
+	y += 1.00001092396453942157124178508842412412025643386873f;
+	y *= b;
+	y += 0.99999989311082729779536722205742989232069120354073f;
+
+	return y * (float)(1<<n);
 }
 
 
@@ -122,6 +164,23 @@ namespace UnitTest
 			float d = (float)rand() / (float)RAND_MAX;
 			Assert::AreEqual(z / d, fdiv(z, d));
 		}
+
+
+		TEST_METHOD(test_fexp1)
+		{
+			float x = 1.0f;
+			float delta = exp(x) * 0.001f;
+			Assert::AreEqual(exp(x), fexp(x), delta);
+		}
+
+		TEST_METHOD(test_fexp2)
+		{
+			float x = 0.001f;
+			float delta = exp(x) * 0.001f;
+			Assert::AreEqual(exp(x), fexp(x), delta);
+		}
+
+
 
 	};
 }
