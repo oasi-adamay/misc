@@ -28,6 +28,26 @@ UINT32 udiv32(
 }
 
 
+UINT32 udiv24(
+	const UINT64 z,             //!<[I ]:dividend
+	const UINT64 d)             //!<[I ]:divsor
+{
+	//試行減算による割り算
+	UINT64 q = 0;   //quotient  商
+	UINT64 r = z;   //remainder 余
+	UINT32 n = 24;  //quotientのbit数
+
+	do {
+		n--;
+		if ((r >> n) >= d) {
+			r -= (d << n);
+			q += (1 << n);
+		}
+	} while (n);
+	return q;
+}
+
+
 float fdiv(
 	const float z,             //!<[I ]:dividend
 	const float d)             //!<[I ]:divsor
@@ -44,12 +64,14 @@ float fdiv(
 	UINT32 _d_fra = (_d & ((1 << 23) - 1)) + (1 << 23);
 
 	SINT32 _q_exp = _z_exp - _d_exp + 127;
-	UINT32 _q_fra = (UINT32) ((_z_fra << 23) / _d_fra);
+//	UINT32 _q_fra = (UINT32) ((_z_fra << 23) / _d_fra);
+	UINT32 _q_fra = udiv24((_z_fra << 23) , _d_fra);
 	UINT32 _q_sign = _z_sign ^ _d_sign;
 
 	SINT32 _q = _q_sign |  (_q_exp << 23) | (_q_fra - (1 << 23));
+	float q = *(float*)&_q;
 
-	return *(float*)&_q;
+	return q;
 
 }
 
@@ -75,22 +97,29 @@ namespace UnitTest
 
 		TEST_METHOD(test_fdiv1)
 		{
-			float z = 100.0f;
+			float z = 1.0f;
 			float d = 1.0f;
 			Assert::AreEqual(z / d, fdiv(z, d));
 		}
 
 		TEST_METHOD(test_fdiv2)
 		{
-			float z = 3.14f;
-			float d = 2.718f;
+			float z = 1.0f;
+			float d = -1.0f;
 			Assert::AreEqual(z / d, fdiv(z, d));
 		}
 
 		TEST_METHOD(test_fdiv3)
 		{
-			float z = 1.0f;
-			float d = -1.0f;
+			float z = 3.14f;
+			float d = 2.718f;
+			Assert::AreEqual(z / d, fdiv(z, d));
+		}
+
+		TEST_METHOD(test_fdiv4)
+		{
+			float z = (float)rand() / (float)RAND_MAX;
+			float d = (float)rand() / (float)RAND_MAX;
 			Assert::AreEqual(z / d, fdiv(z, d));
 		}
 
