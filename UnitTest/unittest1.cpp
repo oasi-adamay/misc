@@ -6,6 +6,8 @@
 #include <codecvt> 
 #include <cstdio>
 
+#include <assert.h>
+
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 typedef unsigned long long UINT64;
@@ -22,6 +24,20 @@ std::string format_str(const char *fmt, ...) {
 	va_end(args);
 	return std::string(buf);
 }
+
+std::wstring format_wstr(const char *fmt, ...) {
+	static char buf[2048];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+
+	std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> cv;
+	return cv.from_bytes(buf);
+}
+
+
+
 
 
 int ULPs(float a, float b) {
@@ -76,14 +92,15 @@ UINT32 udiv24(
 	return (UINT32)q;
 }
 
-
+//	return z / d;
 float fdiv(
 	const float z,             //!<[I ]:dividend
 	const float d)             //!<[I ]:divsor
 {
-//	return z / d;
 	SINT32 _z = *(SINT32*)&z;
 	SINT32 _d = *(SINT32*)&d;
+
+	if (_z == 0 || _z == 0x80000000) return z;
 
 	UINT32 _z_sign = _z & 0x80000000;
 	UINT32 _d_sign = _d & 0x80000000;
@@ -96,6 +113,21 @@ float fdiv(
 //	UINT32 _q_fra = (UINT32) ((_z_fra << 23) / _d_fra);
 	UINT32 _q_fra = udiv24((_z_fra << 23) , _d_fra);
 	UINT32 _q_sign = _z_sign ^ _d_sign;
+
+	//normalize
+	assert((_q_fra & 0xff000000) == 0);
+#if 0
+	while ((_q_fra & (1 << 23)) == 0) {
+		_q_fra <<= 1;
+		_q_exp--;
+	}
+#else
+	if ((_q_fra & (1 << 23)) == 0) {
+		_q_fra <<= 1;
+		_q_exp--;
+	}
+	assert(_q_fra & (1 << 23));
+#endif
 
 	SINT32 _q = _q_sign |  (_q_exp << 23) | (_q_fra - (1 << 23));
 	float q = *(float*)&_q;
@@ -128,7 +160,8 @@ float fexp(
 	y *= b;
 	y += 1.00001092396453942157124178508842412412025643386873f;
 	y *= b;
-	y += 0.99999989311082729779536722205742989232069120354073f;
+//	y += 0.99999989311082729779536722205742989232069120354073f;
+	y += 1.0f;
 
 	//	float c = pow(2.0,n);
 	int _c = (n + 127) << 23;
@@ -137,7 +170,16 @@ float fexp(
 	return y * c;
 }
 
+float ftanh(
+	const float x
+)
+{
+	float exp2x = fexp(2 * x);
+	return fdiv( exp2x - 1.0f , exp2x + 1.0f);
+}
 
+
+#define USE_ULPS
 
 
 namespace UnitTest
@@ -161,28 +203,65 @@ namespace UnitTest
 		{
 			float z = 1.0f;
 			float d = 1.0f;
-			Assert::AreEqual(z / d, fdiv(z, d));
+			float expect = z / d;
+			float actual = fdiv(z, d);
+#ifndef  USE_ULPS
+			Assert::AreEqual(expect, actual);
+#else
+			int ulps = ULPs(expect, actual);
+			std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+			Assert::IsTrue(ulps <= 2, msg.c_str());
+#endif
 		}
 
 		TEST_METHOD(test_fdiv2)
 		{
 			float z = 1.0f;
 			float d = -1.0f;
-			Assert::AreEqual(z / d, fdiv(z, d));
+			float expect = z / d;
+			float actual = fdiv(z, d);
+#ifndef  USE_ULPS
+			Assert::AreEqual(expect, actual);
+#else
+			int ulps = ULPs(expect, actual);
+			std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+			Assert::IsTrue(ulps <= 2, msg.c_str());
+#endif
 		}
 
 		TEST_METHOD(test_fdiv3)
 		{
-			float z = 3.14f;
-			float d = 2.718f;
-			Assert::AreEqual(z / d, fdiv(z, d));
+//			float z = 0.193304241f;
+			float z = 0.0f;
+			float d = 0.808740497f;
+			float expect = z / d;
+			float actual = fdiv(z, d);
+#ifndef  USE_ULPS
+			Assert::AreEqual(expect, actual);
+#else
+			int ulps = ULPs(expect, actual);
+			std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+			Assert::IsTrue(ulps <= 2, msg.c_str());
+#endif
+
 		}
 
-		TEST_METHOD(test_fdiv4)
+		TEST_METHOD(test_fdiv)
 		{
-			float z = (float)rand() / (float)RAND_MAX;
-			float d = (float)rand() / (float)RAND_MAX;
-			Assert::AreEqual(z / d, fdiv(z, d));
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				float z = (float)rand() / (float)RAND_MAX;
+				float d = (float)rand() / (float)RAND_MAX;
+				float expect = z / d;
+				float actual = fdiv(z, d);
+#ifndef  USE_ULPS
+				Assert::AreEqual(expect, actual);
+#else
+				int ulps = ULPs(expect, actual);
+				std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+				Assert::IsTrue(ulps <= 2, msg.c_str());
+#endif
+			}
 		}
 
 
@@ -207,7 +286,7 @@ namespace UnitTest
 			Assert::AreEqual(exp(x), fexp(x), delta);
 		}
 
-		TEST_METHOD(test_fexp4)
+		TEST_METHOD(test_fexp)
 		{
 			std::default_random_engine engine;
 			std::uniform_real_distribution<float> dist(-10.0, 10.0);
@@ -228,6 +307,47 @@ namespace UnitTest
 				std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> cv;
 				Assert::IsTrue(ulps <= 8, cv.from_bytes(msg).c_str());
 #endif
+			}
+		}
+
+		TEST_METHOD(test_ftanh1)
+		{
+			float x = 0.0;
+			float expect = tanh(x);
+			float actual = ftanh(x);
+//#ifndef  USE_ULPS
+#if 1
+			float delta = expect * 0.001f;
+			Assert::AreEqual(expect, actual, delta);
+#else
+			int ulps = ULPs(expect, actual);
+			std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+			Assert::IsTrue(ulps <= 2, msg.c_str());
+#endif
+
+		}
+
+
+		TEST_METHOD(test_ftanh)
+		{
+			std::default_random_engine engine;
+			std::uniform_real_distribution<float> dist(-10.0, 10.0);
+
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				float x = dist(engine);
+				float expect = tanh(x);
+				float actual = ftanh(x);
+//#ifndef  USE_ULPS
+#if 1
+				float delta = expect * 0.001f;
+				Assert::AreEqual(expect, actual, delta);
+#else
+				int ulps = ULPs(expect, actual);
+				std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+				Assert::IsTrue(ulps <= 16, msg.c_str());
+#endif
+
 			}
 		}
 
