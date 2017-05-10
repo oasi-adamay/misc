@@ -1,11 +1,27 @@
 ﻿#include "stdafx.h"
 #include "CppUnitTest.h"
+#include <random>
+
+#include <locale> 
+#include <codecvt> 
+#include <cstdio>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 typedef unsigned long long UINT64;
 typedef unsigned long  UINT32;
 typedef signed long  SINT32;
+
+#include <string>
+#include <cstdarg>
+std::string format_str(const char *fmt, ...) {
+	static char buf[2048];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	return std::string(buf);
+}
 
 
 int ULPs(float a, float b) {
@@ -93,10 +109,10 @@ float fexp(
 	const float x             //!<[I ]:dividend
 )
 {
-	// log2f(1.0f);
-//	const float LOG2 = log2f(1.0f);
-	const float LOG2 = 0.30102999566f;
-	float a = LOG2*x;
+//	const float LOG2 = log(2.0f);
+	const float LOG2 = 0.693147182f;
+	const float DIVLOG2 = 1.0f/ LOG2;
+	float a = x * DIVLOG2;
 	a -= (a < 0);
 	int n = (int)a;
 	float b = x - (float)n * LOG2;
@@ -114,7 +130,11 @@ float fexp(
 	y *= b;
 	y += 0.99999989311082729779536722205742989232069120354073f;
 
-	return y * (float)(1<<n);
+	//	float c = pow(2.0,n);
+	int _c = (n + 127) << 23;
+	float c = *(float*)&_c;
+
+	return y * c;
 }
 
 
@@ -175,12 +195,41 @@ namespace UnitTest
 
 		TEST_METHOD(test_fexp2)
 		{
-			float x = 0.001f;
+			float x = 0.0f;
 			float delta = exp(x) * 0.001f;
 			Assert::AreEqual(exp(x), fexp(x), delta);
 		}
 
+		TEST_METHOD(test_fexp3)
+		{
+			float x = -1.0f;
+			float delta = exp(x) * 0.001f;
+			Assert::AreEqual(exp(x), fexp(x), delta);
+		}
 
+		TEST_METHOD(test_fexp4)
+		{
+			std::default_random_engine engine;
+			std::uniform_real_distribution<float> dist(-10.0, 10.0);
+
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				float x = dist(engine);
+				float expect = exp(x);
+				float actual = fexp(x);
+#if 1
+				float delta = expect * 0.00001f;
+				Assert::AreEqual(expect, actual, delta);
+#else
+				float expect = exp(x);
+				float actual = fexp(x);
+				int ulps = ULPs(expect, actual);
+				std::string msg = format_str("expect:%f actual:%f ULPs:%d", expect, actual,ulps);
+				std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> cv;
+				Assert::IsTrue(ulps <= 8, cv.from_bytes(msg).c_str());
+#endif
+			}
+		}
 
 	};
 }
