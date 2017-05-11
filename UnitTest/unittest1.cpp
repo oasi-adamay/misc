@@ -178,6 +178,74 @@ float ftanh(
 	return fdiv( exp2x - 1.0f , exp2x + 1.0f);
 }
 
+int toInt(const float x) {
+	int _x = *(int*)&x;
+	if (_x == 0 || _x == 0x80000000) return 0;
+
+	int e = ((_x >> 23) & 0xff) - 127;
+	int s = _x & (1<<31);
+	int f = (_x & ((1 << 23) - 1)) + (1 << 23);
+
+	e -= 23;
+	if (31 > e && e >= 0) {
+		f <<= e;
+	}
+	else if(-31 < e){
+		f >>=-e;
+	}
+	else f = 0;
+
+	return (s) ? -f : f;
+}
+
+
+//---------------------------------------------------------------------------
+//popcount
+int popcount(unsigned int bits)
+{
+	bits = (bits & 0x55555555) + (bits >> 1 & 0x55555555);
+	bits = (bits & 0x33333333) + (bits >> 2 & 0x33333333);
+	bits = (bits & 0x0f0f0f0f) + (bits >> 4 & 0x0f0f0f0f);
+	bits = (bits & 0x00ff00ff) + (bits >> 8 & 0x00ff00ff);
+	return (bits & 0x0000ffff) + (bits >> 16 & 0x0000ffff);
+}
+
+//---------------------------------------------------------------------------
+//count leading zeros
+int CLZ(unsigned int x) {
+	x = x | (x >> 1);
+	x = x | (x >> 2);
+	x = x | (x >> 4);
+	x = x | (x >> 8);
+	x = x | (x >> 16);
+	return popcount(~x);
+}
+
+
+float toFloat(const int x) {
+	if (x == 0) return 0.0f;
+	int sgn = x < 0 ? 1 << 31 : 0;
+	int fra = x < 0 ? -x : x ;
+	int clz = CLZ(fra);
+	int sft = 24 - 32 + clz;
+	if (sft >= 0) {
+		fra <<= sft;
+	}
+	else {
+		fra >>= -sft;
+	}
+	int exp = 23 - sft;
+	exp += 127;
+	exp &= 0xff;
+
+	fra -= 1 << 23;
+	fra &= (1 << 23) - 1;
+
+	int ret = sgn | (exp << 23) | fra;
+	return *(float*)&ret;
+}
+
+
 
 #define USE_ULPS
 
@@ -348,6 +416,44 @@ namespace UnitTest
 				Assert::IsTrue(ulps <= 16, msg.c_str());
 #endif
 
+			}
+		}
+
+
+		TEST_METHOD(test_toInt)
+		{
+			std::default_random_engine engine;
+			std::uniform_real_distribution<float> dist(-10.0, 10.0);
+
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				float x = dist(engine);
+				//float x = 0.000448226929;
+				int expect = (int)x;
+				int actual = toInt(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+
+
+		TEST_METHOD(test_toFloat)
+		{
+			std::default_random_engine engine;
+			std::uniform_int_distribution<int> dist(INT_MIN, INT_MAX);
+
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				int x = dist(engine);
+//				int x = 1;
+				float expect = (float)x;
+				float actual = toFloat(x);
+#if 0
+				Assert::AreEqual(expect, actual);
+#else
+				int ulps = ULPs(expect, actual);
+				std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+				Assert::IsTrue(ulps <= 1, msg.c_str());
+#endif
 			}
 		}
 
