@@ -137,6 +137,27 @@ float fdiv(
 }
 
 
+float ffloor(const float x) {
+	int _x = *(int*)&x;
+//	if (_x == 0 || _x == 0x80000000) return 0;
+	if (_x == 0x80000000) _x = 0;
+
+	int e = ((_x >> 23) & 0xff) - 127;
+	if (e < 0) {
+		_x = 0;
+	}
+	else {
+		int msk = 0xFF800000;
+		msk >>= e;
+		_x &= msk;
+	}
+
+	float ans = *(float*)&_x;
+	if (x < 0) ans -= 1.0f;
+	return ans;
+}
+
+
 float fexp(
 	const float x             //!<[I ]:dividend
 )
@@ -145,9 +166,17 @@ float fexp(
 	const float LOG2 = 0.693147182f;
 	const float DIVLOG2 = 1.0f/ LOG2;
 	float a = x * DIVLOG2;
+#if 0
 	a -= (a < 0);
 	int n = (int)a;
 	float b = x - (float)n * LOG2;
+#else
+//	float fa = std::floor(a);
+	float fa = ffloor(a);
+	float b = x - fa * LOG2;
+	int n = (int)fa;
+
+#endif
 	float y;
 	//horner scheme 5 th order 
 	y = 1.185268231308989403584147407056378360798378534739e-2f;
@@ -456,6 +485,76 @@ namespace UnitTest
 #endif
 			}
 		}
+
+		TEST_METHOD(test_ffloor)
+		{
+			std::default_random_engine engine;
+			std::uniform_real_distribution<float> dist(-10.0, 10.0);
+
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				float x = dist(engine);
+				//				int x = 1;
+				std::wstring msg = format_wstr("at %f", x);
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+#if 1
+				Assert::AreEqual(expect, actual,msg.c_str());
+#else
+				int ulps = ULPs(expect, actual);
+				std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+				Assert::IsTrue(ulps <= 1, msg.c_str());
+#endif
+			}
+		}
+
+
+		TEST_METHOD(test_ffloor1)
+		{
+			{
+				float x = 1.0;
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+		TEST_METHOD(test_ffloor2)
+		{
+			{
+				float x = 1.5;
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+		TEST_METHOD(test_ffloor3)
+		{
+			{
+				float x = -1.5;
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+		TEST_METHOD(test_ffloor4)
+		{
+			{
+				float x = -0;
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+		TEST_METHOD(test_ffloor5)
+		{
+			{
+				float x = -0.5;
+				float expect = std::floor(x);
+				float actual = ffloor(x);
+				Assert::AreEqual(expect, actual);
+			}
+		}
+
 
 	};
 }
