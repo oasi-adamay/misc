@@ -5,7 +5,7 @@
 #include <locale> 
 #include <codecvt> 
 #include <cstdio>
-
+#include <algorithm>
 #include <assert.h>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -157,7 +157,7 @@ float ffloor(const float x) {
 	return ans;
 }
 
-
+#if 0
 float fexp(
 	const float x             //!<[I ]:dividend
 )
@@ -198,6 +198,60 @@ float fexp(
 
 	return y * c;
 }
+#else
+float fexp(
+	const float x             //!<[I ]:dividend
+)
+{
+	//	const float LOG2 = log(2.0f);
+	const float LOG2 = 0.693147182f;
+	const float DIVLOG2 = 1.44269502f; // 1.0f / LOG2;
+	float a = x * DIVLOG2;
+	if (x < 0) a -= 1.0f;
+
+	int _a = *(int*)&a;
+	int n = (_a & ((1 << 23) - 1)) + (1 << 23);
+	int e = ((_a >> 23) & 0xff) - 127;
+	if (e < 0) {
+		_a = 0;
+		n = 0;
+	}
+	else {
+		int sft = 23 - e;
+		sft = sft < 0 ? 0 : sft;
+		_a &= ~((1 << sft) - 1);
+		n >>= sft;
+	}
+	if (x < 0) n *=-1;
+	
+	float fa = *(float*)&_a;
+	float b = x - fa * LOG2;
+
+
+	float y;
+	//horner scheme 5 th order 
+	y = 1.185268231308989403584147407056378360798378534739e-2f;
+	y *= b;
+	y += 3.87412011356070379615759057344100690905653320886699e-2f;
+	y *= b;
+	y += 0.16775408658617866431779970932853611481292418818223f;
+	y *= b;
+	y += 0.49981934577169208735732248650232562589934399402426f;
+	y *= b;
+	y += 1.00001092396453942157124178508842412412025643386873f;
+	y *= b;
+	y += 1.0f;
+
+	//	float c = pow(2.0,n);
+	n += 127;
+	n = n < 1 ? 1 : n > 254 ? 254: n;
+	int _c = n << 23;
+	float c = *(float*)&_c;
+
+	return y * c;
+}
+#endif
+
 
 float ftanh(
 	const float x
@@ -383,19 +437,21 @@ namespace UnitTest
 			Assert::AreEqual(exp(x), fexp(x), delta);
 		}
 
+
 		TEST_METHOD(test_fexp)
 		{
 			std::default_random_engine engine;
-			std::uniform_real_distribution<float> dist(-10.0, 10.0);
+			std::uniform_real_distribution<float> dist(-1000.0, 1000.0);
 
 			int N = 1000;
 			for (int n = 0; n < N; n++) {
 				float x = dist(engine);
 				float expect = exp(x);
 				float actual = fexp(x);
+				std::wstring msg = format_wstr("exp(%f)", x);
 #if 1
-				float delta = expect * 0.00001f;
-				Assert::AreEqual(expect, actual, delta);
+				float delta = std::max(expect * 0.00001f , FLT_MIN * 4);
+				Assert::AreEqual(expect, actual, delta , msg.c_str());
 #else
 				float expect = exp(x);
 				float actual = fexp(x);
