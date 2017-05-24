@@ -8,6 +8,12 @@
 #include <algorithm>
 #include <assert.h>
 
+#include <cfenv>
+#ifdef _MSC_VER
+#pragma fenv_access (on)
+#endif
+
+
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 
 typedef unsigned long long UINT64;
@@ -74,22 +80,172 @@ UINT32 udiv32(
 
 
 UINT32 udiv24(
-	const UINT64 z,             //!<[I ]:dividend
-	const UINT64 d)             //!<[I ]:divsor
+	const UINT32 z,             //!<[I ]:dividend
+	const UINT32 d)             //!<[I ]:divsor
 {
 	//試行減算による割り算
-	UINT64 q = 0;   //quotient  商
-	UINT64 r = z;   //remainder 余
+	UINT32 q = 0;   //quotient  商
+	UINT32 r = z;   //remainder 余
 	UINT32 n = 24;  //quotientのbit数
 
 	do {
 		n--;
 		if ((r >> n) >= d) {
 			r -= (d << n);
+			q += (1 << n);
+		}
+	} while (n);
+	return q;
+}
+
+
+UINT32 udiv48(
+	const UINT64 z,             //!<[I ]:dividend
+	const UINT32 d)             //!<[I ]:divsor
+{
+	//試行減算による割り算
+	UINT32 n = 24;  //quotientのbit数
+	UINT32 q = 0;   //quotient  商
+	UINT64 r = z;   //remainder 余
+
+#if 0
+	do {
+		n--;
+		if ((r >> n) >= d) {
+			r -= (((UINT64)d) << n);
 			q += (1LL << n);
 		}
 	} while (n);
-	return (UINT32)q;
+#elif 1
+	SINT32 rh = r >> 32;
+	SINT32 rl = r & 0xFFFFFFFF;
+	SINT32 dh = d >> (32 - 24);
+	SINT32 dl = d << 24;
+
+	UINT32 _rl = r & 0xFFFFFFFF;
+	UINT32 _dl = d << 24;
+
+	assert((UINT32)dl == _dl);
+	assert((UINT32)rl == _rl);
+
+
+	do {
+		n--;
+
+		//sht right dh & dl
+		dl = (UINT32)dl >> 1;
+		_dl = (UINT32)_dl >> 1;
+		assert((UINT32)dl == _dl);
+
+		if (dh & 1) dl |= 0x80000000;
+		if (dh & 1) _dl |= 0x80000000;
+		assert((UINT32)dl == _dl);
+
+		dh = (UINT32)dh >> 1;
+		q <<= 1;
+
+		bool rhGTdh = (rh > dh);
+		bool rhEQdh = (rh == dh);
+		bool rlGEdl = (rl >= dl);
+		bool rlLTdl = (rl < dl);
+		if ((rl^dl) & 0x80000000) rlGEdl = !rlGEdl;
+		if ((rl^dl) & 0x80000000) rlLTdl = !rlLTdl;
+
+		assert(((UINT32)rh > (UINT32)dh) == rhGTdh);
+		assert(((UINT32)rh ==(UINT32)dh) == rhEQdh);
+		assert(((UINT32)rl >= (UINT32)dl) == rlGEdl);
+		assert(((UINT32)rl <  (UINT32)dl) == rlLTdl);
+
+
+		if (rhGTdh || (rhEQdh && rlGEdl)) {
+			rh = rh - dh;
+			if (rlLTdl) rh--;
+			rl = rl - dl;
+			q += 1;
+
+			_rl = _rl - _dl;
+
+			assert((UINT32)rl == _rl);
+			assert((UINT32)dl == _dl);
+
+
+		}
+	} while (n);
+
+#elif 1
+	UINT32 rh = r >> 32;
+	UINT32 rl = r & 0xFFFFFFFF;
+	UINT32 dh = d >> (32 - 24);
+	UINT32 dl = d << 24;
+
+	do {
+		n--;
+
+		//sht right dh & dl
+		dl >>= 1;
+		if (dh & 1) dl |= 0x80000000;
+		dh >>= 1;
+		q <<= 1;
+
+		if ((rh > dh) || ((rh == dh) && (rl >= dl))) {
+			rh = rh - dh;
+			if (rl < dl) rh--;
+			rl = rl - dl;
+			q += 1;
+		}
+	} while (n);
+
+
+#else 
+
+	UINT64 d1 = ((UINT64)d) << n;
+	UINT32 rh = r >> 32;
+	UINT32 rl = r & 0xFFFFFFFF;
+	UINT32 dh = d >> (32 - 24);
+	UINT32 dl = d << 24;
+
+	assert(d1 >> 32 == dh);
+	assert((d1 & 0xFFFFFFFF) == dl);
+
+	do {
+		n--;
+		d1 >>= 1;
+
+		//sht right dh & dl
+		dl >>= 1;
+		if (dh & 1) dl |= 0x80000000;
+		dh >>= 1;
+
+		assert(d1 >> 32 == dh);
+		assert((d1 & 0xFFFFFFFF) == dl);
+
+		q <<= 1;
+
+		rh = r >> 32;
+		rl = r & 0xFFFFFFFF;
+
+		assert(
+			((rh > dh) || ((rh == dh) && (rl >= dl))) == 
+			(r >= d1)
+		);
+
+//		if (r >= d1) {
+		if ((rh > dh) || ((rh == dh) && (rl >= dl))) {
+
+			r -= d1;
+
+			rh = rh - dh;
+			if (rl < dl) rh--;
+			rl = rl - dl;
+
+			assert(rh == (r >> 32));
+			assert(rl == (r & 0xFFFFFFFF));
+
+			q += 1;
+		}
+	} while (n);
+#endif
+	return q;
 }
 
 //	return z / d;
@@ -106,12 +262,17 @@ float fdiv(
 	UINT32 _d_sign = _d & 0x80000000;
 	SINT32 _z_exp = (_z >> 23) & 0xff;
 	SINT32 _d_exp = (_d >> 23) & 0xff;
-	UINT64 _z_fra = (_z & ((1 << 23) - 1)) + (1 << 23);
+	UINT32 _z_fra = (_z & ((1 << 23) - 1)) + (1 << 23);
 	UINT32 _d_fra = (_d & ((1 << 23) - 1)) + (1 << 23);
 
 	SINT32 _q_exp = _z_exp - _d_exp + 127;
-//	UINT32 _q_fra = (UINT32) ((_z_fra << 23) / _d_fra);
-	UINT32 _q_fra = udiv24((_z_fra << 23) , _d_fra);
+#if 0
+	UINT32 _q_fra = ((((UINT64)_z_fra) << 23) / _d_fra);
+#elif 1
+	UINT32 _q_fra = udiv48(((UINT64)_z_fra) << 23 , _d_fra);
+#else //誤差が大きすぎる
+	UINT32 _q_fra = udiv24(_z_fra << 8, _d_fra) << (23 -8);
+#endif
 	UINT32 _q_sign = _z_sign ^ _d_sign;
 
 	//normalize
@@ -128,6 +289,19 @@ float fdiv(
 	}
 	assert(_q_fra & (1 << 23));
 #endif
+
+	//	_q_exp = _q_exp < 1 ? 1 : _q_exp > 254 ? 254 : _q_exp;
+
+	if (_q_exp < 1) {
+		_q_exp = 0;
+		_q_fra = (1 << 23);
+	}
+	else if(_q_exp >254){
+		_q_exp = 254;
+		_q_fra = (1 << 24) - 1;
+	}
+
+
 
 	SINT32 _q = _q_sign |  (_q_exp << 23) | (_q_fra - (1 << 23));
 	float q = *(float*)&_q;
@@ -203,6 +377,9 @@ float fexp(
 	const float x             //!<[I ]:dividend
 )
 {
+	//丸めモードの指定
+	if (std::fegetround() != FE_TOWARDZERO)	std::fesetround(FE_TOWARDZERO);		// ゼロ方向への丸め
+
 	//	const float LOG2 = log(2.0f);
 	const float LOG2 = 0.693147182f;
 	const float DIVLOG2 = 1.44269502f; // 1.0f / LOG2;
@@ -244,7 +421,15 @@ float fexp(
 
 	//	float c = pow(2.0,n);
 	n += 127;
-	n = n < 1 ? 1 : n > 254 ? 254: n;
+	//if (n < 1) {
+	//	y = 0;
+	//	n = 0;
+	//}
+	//else if (n > 254) {
+	//	n = 255;
+	//	y = 1.0;
+	//}
+	n = n < 1 ? 0 : n > 254 ? 254: n;
 	int _c = n << 23;
 	float c = *(float*)&_c;
 
@@ -333,6 +518,25 @@ float toFloat(const int x) {
 #define USE_ULPS
 
 
+bool ucmple(int8_t a, int8_t b) {
+#if 0
+	return (uint8_t)a <= (uint8_t)b;
+#elif 0
+	return ((a ^ b) & 0x80) ?  a > b : a <= b;
+#elif 0
+	return ((a ^ b) & 0x80) ? b <= a : a <= b;
+#elif 1
+	return ((a ^ b) & 0x80) ? !(a <= b) : a <= b;
+#else
+	if ((a ^ b) & 0x80) {
+		a = a ^ b;
+		b = a ^ b;
+		a = a ^ b;
+	}
+	return a <= b;
+#endif
+}
+
 namespace UnitTest
 {		
 	TEST_CLASS(UnitTest1)
@@ -341,14 +545,35 @@ namespace UnitTest
 		
 		TEST_METHOD(test_udiv32)
 		{
-			// TODO: テスト コードをここに挿入します
+			std::default_random_engine engine;
+			std::uniform_int_distribution<UINT32> dist(1, INT_MAX);
 
-			UINT32 z = 100;
-			UINT32 d = 10;
+			int N = 1000;
+			for (int n = 0; n < N; n++) {
+				UINT32 z = dist(engine);
+				UINT32 d = dist(engine);
+				d >>= 16;
+//				if (d > z) std::swap(z,d);
 
-			Assert::AreEqual(z/d, udiv32(z,d));
+				UINT32 expect = z / d;
+				UINT32 actual = udiv32(z, d);
+
+				std::wstring msg = format_wstr("z:%d d:%d",z ,d);
+				Assert::AreEqual(expect, actual, msg.c_str());
+			}
 
 		}
+
+		TEST_METHOD(test_udiv32_0)
+		{
+			// TODO: テスト コードをここに挿入します
+			UINT32 z = 100;
+			UINT32 d = 10;
+			std::wstring msg = format_wstr("z:%d d:%d", z, d);
+			Assert::AreEqual(z/d, udiv32(z,d), msg.c_str());
+
+		}
+
 
 		TEST_METHOD(test_fdiv1)
 		{
@@ -383,8 +608,22 @@ namespace UnitTest
 		TEST_METHOD(test_fdiv3)
 		{
 //			float z = 0.193304241f;
-			float z = 0.0f;
-			float d = 0.808740497f;
+//			float z = 1.0f;
+//			float d = 3.0f;
+//			float d = 0.808740497f;
+#if 0
+			int zi = 0x3f20b1a0;
+			int di = 0x3f4b5ecb;
+			float z = *(float*)&zi;
+			float d = *(float*)&di;
+#else
+//			float z = 0.0;
+//			float d = FLT_MAX;
+//			float z = FLT_MIN;
+			float z = FLT_EPSILON;
+			float d = FLT_MAX;
+#endif
+
 			float expect = z / d;
 			float actual = fdiv(z, d);
 #ifndef  USE_ULPS
@@ -399,18 +638,27 @@ namespace UnitTest
 
 		TEST_METHOD(test_fdiv)
 		{
+			std::default_random_engine engine;
+//			std::uniform_real_distribution<float> dist(-1000.0, 1000.0);
+			std::uniform_real_distribution<float> dist(-FLT_MAX/2, FLT_MAX/2);
+
 			int N = 1000;
 			for (int n = 0; n < N; n++) {
-				float z = (float)rand() / (float)RAND_MAX;
-				float d = (float)rand() / (float)RAND_MAX;
+				float z = dist(engine);
+				float d;
+				do { d = dist(engine);}
+				while (std::fabs(d) < FLT_MIN);
+
+
 				float expect = z / d;
 				float actual = fdiv(z, d);
 #ifndef  USE_ULPS
 				Assert::AreEqual(expect, actual);
 #else
 				int ulps = ULPs(expect, actual);
-				std::wstring msg = format_wstr("expect:%f actual:%f ULPs:%d", expect, actual, ulps);
+				std::wstring msg = format_wstr("z:%f d:%f expect:%f actual:%f ULPs:%d", z, d, expect, actual, ulps);
 				Assert::IsTrue(ulps <= 2, msg.c_str());
+//				Assert::IsTrue(ulps <= 100, msg.c_str());
 #endif
 			}
 		}
@@ -432,7 +680,9 @@ namespace UnitTest
 
 		TEST_METHOD(test_fexp3)
 		{
-			float x = -1.0f;
+//			float x = -1.0f;
+			float x = -FLT_MAX;
+//			float x = FLT_EPSILON;
 			float delta = exp(x) * 0.001f;
 			Assert::AreEqual(exp(x), fexp(x), delta);
 		}
@@ -608,6 +858,46 @@ namespace UnitTest
 				float expect = std::floor(x);
 				float actual = ffloor(x);
 				Assert::AreEqual(expect, actual);
+			}
+		}
+
+
+		TEST_METHOD(test_ucmple)
+		{
+			{
+				uint8_t  ua;
+				uint8_t  ub;
+
+				ua = 0x00; ub = 0x00;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua,ub).c_str());
+
+				ua = 0x00; ub = 0x7f;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x00; ub = 0x80;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x00; ub = 0xff;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x7f; ub = 0x00;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x7f; ub = 0x7f;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x7f; ub = 0x80;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x7f; ub = 0xff;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0x80; ub = 0xff;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
+				ua = 0xff; ub = 0xff;
+				Assert::AreEqual(ua <= ub, ucmple(ua, ub), format_wstr("a:0x%02x b:0x%02x", ua, ub).c_str());
+
 			}
 		}
 
