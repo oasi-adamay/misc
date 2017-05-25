@@ -1,0 +1,6 @@
+[submodule "fdiv"]
+	path = fdiv
+	url = https://gist.github.com/45c8af87e5e03248e62f7624a575ef44.git
+[submodule "fexp"]
+	path = fexp
+	url = https://gist.github.com/2b263771d5128c11405ac530852d310e.git
