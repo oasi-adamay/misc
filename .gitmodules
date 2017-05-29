@@ -13,3 +13,6 @@
 [submodule "fmul"]
 	path = fmul
 	url = https://gist.github.com/ee69a1b9b8954efb9774b7b67d746049.git
+[submodule "fsqrt"]
+	path = fsqrt
+	url = https://gist.github.com/b9b9458bd1936940cb534d94a7735d58.git
