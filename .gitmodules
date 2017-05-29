@@ -7,3 +7,9 @@
 [submodule "hello_world"]
 	path = hello_world
 	url = https://gist.github.com/b4e3953d689d57cdd9fc7878763bef88.git
+[submodule "fadd"]
+	path = fadd
+	url = https://gist.github.com/40f33a21393f77e2586d73801cdae4fa.git
+[submodule "fmul"]
+	path = fmul
+	url = https://gist.github.com/ee69a1b9b8954efb9774b7b67d746049.git
