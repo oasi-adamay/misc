@@ -16,3 +16,6 @@
 [submodule "fsqrt"]
 	path = fsqrt
 	url = https://gist.github.com/b9b9458bd1936940cb534d94a7735d58.git
+[submodule "flog"]
+	path = flog
+	url = https://gist.github.com/8497078c87054a1790b2eb9c0a96379c.git
